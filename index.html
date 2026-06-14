@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>LoyaltyOS</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+
+<div id="loading-overlay" style="display:flex;position:fixed;inset:0;background:#fff;z-index:999;align-items:center;justify-content:center;flex-direction:column;gap:14px">
+  <svg width="36" height="36" viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="14" fill="#4F46E5"/><path d="M14 7l1.8 5.4H22l-4.9 3.6 1.9 5.4L14 18l-5 3.4 1.9-5.4L7 12.4h6.2L14 7z" fill="#fff"/></svg>
+  <div style="font-size:14px;color:#64748b">Initialising database…</div>
+</div>
+
+<!-- AUTH -->
+<div id="auth-layer" style="display:none;min-height:100vh;background:#f8fafc;align-items:center;justify-content:center">
+  <div class="auth-card">
+    <div class="auth-brand"><svg width="28" height="28" viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="14" fill="#4F46E5"/><path d="M14 7l1.8 5.4H22l-4.9 3.6 1.9 5.4L14 18l-5 3.4 1.9-5.4L7 12.4h6.2L14 7z" fill="#fff"/></svg>LoyaltyOS</div>
+    <div id="auth-login">
+      <div class="auth-title">Sign in</div>
+      <div class="auth-sub">Vendor, team member, or admin account</div>
+      <div class="field"><label>Email</label><input id="login-email" type="email" placeholder="you@brand.com" onkeydown="if(event.key==='Enter')handleLogin()"/></div>
+      <div class="field"><label>Password</label><input id="login-password" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')handleLogin()"/></div>
+      <div class="auth-error" id="login-error" style="display:none"></div>
+      <button class="btn-primary auth-btn" id="login-btn" onclick="handleLogin()">Sign in</button>
+      <div class="auth-switch">No account? <a href="#" onclick="showAuthScreen('register');return false">Register your brand →</a></div>
+      <div class="auth-hint">Platform admin: admin@loyaltyos.com / admin1234</div>
+    </div>
+    <div id="auth-register" style="display:none">
+      <div class="auth-title">Register your brand</div>
+      <div class="auth-sub">Creates an owner account. Invite team members after setup.</div>
+      <div class="field"><label>Business name</label><input id="reg-name" type="text" placeholder="Acme Retail"/></div>
+      <div class="field"><label>Email</label><input id="reg-email" type="email" placeholder="you@brand.com"/></div>
+      <div class="field-row">
+        <div class="field"><label>Password</label><input id="reg-password" type="password" placeholder="Min 6 chars"/></div>
+        <div class="field"><label>Confirm</label><input id="reg-confirm" type="password" onkeydown="if(event.key==='Enter')handleRegister()"/></div>
+      </div>
+      <div class="auth-error" id="register-error" style="display:none"></div>
+      <button class="btn-primary auth-btn" id="register-btn" onclick="handleRegister()">Create account</button>
+      <div class="auth-switch"><a href="#" onclick="showAuthScreen('login');return false">← Back to sign in</a></div>
+    </div>
+  </div>
+</div>
+
+<!-- ADMIN PANEL -->
+<div id="admin-layer" style="display:none;min-height:100vh;flex-direction:column;background:#f8fafc">
+  <div class="admin-topbar">
+    <div style="display:flex;align-items:center;gap:10px">
+      <svg width="22" height="22" viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="14" fill="#818cf8"/><path d="M14 7l1.8 5.4H22l-4.9 3.6 1.9 5.4L14 18l-5 3.4 1.9-5.4L7 12.4h6.2L14 7z" fill="#fff"/></svg>
+      <span style="font-weight:600;color:#1e293b">LoyaltyOS</span>
+      <span class="admin-crown">Platform Admin</span>
+    </div>
+    <button class="btn-logout" onclick="handleLogout()" style="margin:0">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Sign out
+    </button>
+  </div>
+  <div style="padding:32px 40px">
+    <div class="page-header-row" style="margin-bottom:24px">
+      <div><h1 style="font-size:22px;font-weight:600;color:#0f172a;margin-bottom:4px">Vendor Management</h1><p style="font-size:13px;color:#64748b">All vendors on the platform</p></div>
+      <button class="btn-primary" onclick="openModal('create-vendor')">+ Create vendor</button>
+    </div>
+    <div class="metrics-grid" style="margin-bottom:24px">
+      <div class="metric-card"><div class="metric-icon blue"><svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></div><div class="metric-label">Total vendors</div><div class="metric-val" id="admin-vendor-count">0</div></div>
+      <div class="metric-card"><div class="metric-icon green"><svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg></div><div class="metric-label">Total customers</div><div class="metric-val" id="admin-total-customers">0</div></div>
+      <div class="metric-card"><div class="metric-icon amber"><svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></div><div class="metric-label">Total revenue</div><div class="metric-val" id="admin-total-revenue">$0</div></div>
+      <div class="metric-card"><div class="metric-icon purple"><svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/></svg></div><div class="metric-label">Total transactions</div><div class="metric-val" id="admin-total-txns">0</div></div>
+    </div>
+    <div class="table-wrap">
+      <div class="empty-state" id="admin-vendor-empty" style="display:none"><svg width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg><p>No vendors yet.</p></div>
+      <table class="data-table" id="admin-vendor-list">
+        <thead><tr><th>Vendor ID</th><th>Business</th><th>Email</th><th>Registered</th><th>Customers</th><th>Txns</th><th>Revenue</th><th>Pts issued</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="admin-vendor-table"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- VENDOR APP -->
+<div id="app-layer" class="app" style="display:none">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <svg width="22" height="22" viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="14" fill="#818cf8"/><path d="M14 7l1.8 5.4H22l-4.9 3.6 1.9 5.4L14 18l-5 3.4 1.9-5.4L7 12.4h6.2L14 7z" fill="#fff"/></svg>
+      <span class="brand-name">LoyaltyOS</span>
+    </div>
+    <button id="admin-back-btn" class="admin-back-btn" onclick="adminBackToPanel()" style="display:none">← Admin panel</button>
+    <div class="vendor-pill">
+      <div class="vendor-pill-avatar" id="vendor-avatar">–</div>
+      <div class="vendor-pill-info">
+        <div class="vendor-pill-name" id="vendor-name-display"></div>
+        <div class="vendor-pill-id" id="vendor-id-display"></div>
+      </div>
+      <span class="role-badge" id="role-badge">owner</span>
+    </div>
+    <nav class="sidebar-nav">
+      <button class="nav-item active" onclick="switchToTab('dashboard',this)"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</button>
+      <button class="nav-item" onclick="switchToTab('customers',this)"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg>Customers</button>
+      <button class="nav-item" onclick="switchToTab('products',this)"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/></svg>Products</button>
+      <button class="nav-item" onclick="switchToTab('transaction',this)"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>Add Transaction</button>
+      <button class="nav-item" onclick="switchToTab('ledger',this)"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>Ledger</button>
+      <button class="nav-item" id="nav-team" onclick="switchToTab('team',this)"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Team</button>
+      <button class="nav-item" id="nav-config" onclick="switchToTab('config',this)"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M4.93 19.07l1.41-1.41m11.32-11.32 1.41-1.41"/></svg>Config</button>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="btn-export" onclick="dbExport(currentVendor?.name||adminViewingVendor?.name)"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export DB</button>
+      <button class="btn-logout" onclick="handleLogout()"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Sign out</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- DASHBOARD -->
+    <div id="tab-dashboard" class="panel active">
+      <div class="page-header"><h1>Dashboard</h1><p class="page-sub">Programme overview</p></div>
+      <div class="metrics-grid">
+        <div class="metric-card"><div class="metric-icon blue"><svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg></div><div class="metric-label">Customers</div><div class="metric-val" id="m-total">0</div></div>
+        <div class="metric-card"><div class="metric-icon amber"><svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></div><div class="metric-label">Points issued</div><div class="metric-val" id="m-issued">0</div></div>
+        <div class="metric-card"><div class="metric-icon green"><svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg></div><div class="metric-label">Net points</div><div class="metric-val" id="m-net">0</div></div>
+        <div class="metric-card"><div class="metric-icon purple"><svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/></svg></div><div class="metric-label">Transactions</div><div class="metric-val" id="m-txns">0</div></div>
+      </div>
+      <div class="section-row">
+        <div class="section-card"><div class="section-title">Status distribution</div><div id="status-dist" class="status-dist"></div></div>
+        <div class="section-card"><div class="section-title">Active points mode</div><div id="active-mode-display" class="mode-notice" style="margin-bottom:10px;font-size:13px"></div><div class="mode-btn-wrap" id="mode-grid"></div></div>
+      </div>
+      <div class="section-card" style="margin-top:16px"><div class="section-title">Status tiers</div><div class="tier-overview" id="tier-overview"></div></div>
+    </div>
+
+    <!-- CUSTOMERS -->
+    <div id="tab-customers" class="panel">
+      <div class="page-header-row">
+        <div><h1>Customers</h1><p class="page-sub">Registered loyalty members</p></div>
+        <button class="btn-primary" onclick="if(canWrite())openModal('add-customer');else alert('Readonly access — cannot add customers.')">+ Register customer</button>
+      </div>
+      <div class="table-wrap">
+        <div class="empty-state" id="cust-empty"><svg width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg><p>No customers yet.</p></div>
+        <table class="data-table" id="cust-table" style="display:none">
+          <thead><tr><th>Customer ID</th><th>Name</th><th>Email</th><th>Pts tier</th><th>Status</th><th>Qualifying spend</th><th>Net points</th><th>Actions</th></tr></thead>
+          <tbody id="cust-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- PRODUCTS -->
+    <div id="tab-products" class="panel">
+      <div class="page-header-row">
+        <div><h1>Product catalog</h1><p class="page-sub">Per-product points multiplier overrides</p></div>
+        <button class="btn-primary" onclick="openProductModal()">+ Add product</button>
+      </div>
+      <div class="table-wrap">
+        <div class="empty-state" id="prod-empty"><svg width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/></svg><p>No products yet.</p></div>
+        <table class="data-table" id="prod-table" style="display:none">
+          <thead><tr><th>ID</th><th>Name</th><th>SKU</th><th>Category</th><th>Price</th><th>Points multiplier</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="prod-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TRANSACTION -->
+    <div id="tab-transaction" class="panel">
+      <div class="page-header"><h1>Add transaction</h1><p class="page-sub">Record a purchase or return</p></div>
+      <div class="form-card">
+        <div class="field-row">
+          <div class="field"><label>Order type</label><select id="order-type" onchange="onOrderTypeChange()"><option value="registered">Registered customer</option><option value="guest">Guest (no points)</option></select></div>
+          <div class="field" id="cust-field"><label>Customer</label><select id="cust-sel" onchange="updatePreview()"><option value="">— select customer —</option></select></div>
+        </div>
+        <div class="guest-notice" id="guest-notice" style="display:none">Guest orders recorded for revenue tracking only. No points allocated.</div>
+        <div class="cust-id-row" id="cust-id-row" style="display:none"><span class="label-muted">Customer ID</span><span class="cid-pill" id="cid-show"></span><span id="status-inline"></span></div>
+        <div class="field-row">
+          <div class="field"><label>Product (optional)</label><select id="prod-sel" onchange="updatePreview()"><option value="">— no product / manual amount —</option></select></div>
+          <div class="field"><label>Amount ($)</label><input type="number" id="amt" min="0" placeholder="0.00" oninput="this.dataset.manual='1';updatePreview()"/></div>
+        </div>
+        <div class="field"><label>Description</label><input type="text" id="desc" placeholder="e.g. In-store purchase"/></div>
+        <div class="preview-box" id="txn-preview">Select order type and enter an amount.</div>
+        <button class="btn-primary" onclick="addTransaction()">Add transaction →</button>
+      </div>
+    </div>
+
+    <!-- LEDGER -->
+    <div id="tab-ledger" class="panel">
+      <div class="page-header-row">
+        <div><h1>Ledger</h1><p class="page-sub">Full transaction audit trail</p></div>
+        <select id="ledger-filter" onchange="renderLedger()" style="font-size:13px;padding:7px 12px;border-radius:8px;border:1px solid #e2e8f0;background:#fff"><option value="">All customers</option></select>
+      </div>
+      <div id="ledger-summary-bar" class="summary-bar" style="display:none"></div>
+      <div class="table-wrap">
+        <div class="empty-state" id="ledger-empty"><svg width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg><p>No transactions yet.</p></div>
+        <table class="data-table" id="ledger-table" style="display:none">
+          <thead><tr><th>Txn ID</th><th>Date</th><th>Customer ID</th><th>Customer</th><th>Product</th><th>Description</th><th>Amount</th><th>Mult</th><th>Points</th><th>Kind</th><th>By</th><th>Ref</th><th></th></tr></thead>
+          <tbody id="ledger-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TEAM -->
+    <div id="tab-team" class="panel">
+      <div class="page-header-row">
+        <div><h1>Team</h1><p class="page-sub">Manage portal access — owner, admin (write), readonly</p></div>
+        <button class="btn-primary" onclick="openModal('invite-user')">+ Add team member</button>
+      </div>
+      <div class="section-card" style="margin-bottom:16px">
+        <table style="width:100%;font-size:13px;border-collapse:collapse">
+          <thead><tr style="border-bottom:1px solid #f1f5f9">
+            <th style="text-align:left;padding:8px;font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase">User ID</th>
+            <th style="text-align:left;padding:8px;font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase">Name</th>
+            <th style="text-align:left;padding:8px;font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase">Email</th>
+            <th style="text-align:left;padding:8px;font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase">Role</th>
+            <th style="text-align:left;padding:8px;font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase">Added</th>
+            <th style="padding:8px"></th>
+          </tr></thead>
+          <tbody id="team-tbody"></tbody>
+        </table>
+      </div>
+      <div class="section-card">
+        <div class="section-title">Role permissions</div>
+        <table style="width:100%;font-size:12px;border-collapse:collapse;margin-top:8px">
+          <thead><tr><th style="text-align:left;padding:6px 10px;color:#64748b;font-weight:500">Permission</th><th style="padding:6px 10px;text-align:center">Readonly</th><th style="padding:6px 10px;text-align:center">Admin</th><th style="padding:6px 10px;text-align:center">Owner</th></tr></thead>
+          <tbody>
+            <tr style="border-top:1px solid #f1f5f9"><td style="padding:6px 10px;color:#374151">View dashboard, customers, ledger</td><td style="text-align:center">✓</td><td style="text-align:center">✓</td><td style="text-align:center">✓</td></tr>
+            <tr style="border-top:1px solid #f1f5f9"><td style="padding:6px 10px;color:#374151">Register customers, add transactions</td><td style="text-align:center;color:#94a3b8">—</td><td style="text-align:center">✓</td><td style="text-align:center">✓</td></tr>
+            <tr style="border-top:1px solid #f1f5f9"><td style="padding:6px 10px;color:#374151">Override customer status</td><td style="text-align:center;color:#94a3b8">—</td><td style="text-align:center">✓</td><td style="text-align:center">✓</td></tr>
+            <tr style="border-top:1px solid #f1f5f9"><td style="padding:6px 10px;color:#374151">Add appeasement points</td><td style="text-align:center;color:#94a3b8">—</td><td style="text-align:center">✓</td><td style="text-align:center">✓</td></tr>
+            <tr style="border-top:1px solid #f1f5f9"><td style="padding:6px 10px;color:#374151">Manage tiers, modes, products, config</td><td style="text-align:center;color:#94a3b8">—</td><td style="text-align:center;color:#94a3b8">—</td><td style="text-align:center">✓</td></tr>
+            <tr style="border-top:1px solid #f1f5f9"><td style="padding:6px 10px;color:#374151">Invite / remove team members</td><td style="text-align:center;color:#94a3b8">—</td><td style="text-align:center;color:#94a3b8">—</td><td style="text-align:center">✓</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- CONFIG -->
+    <div id="tab-config" class="panel">
+      <div class="page-header"><h1>Configuration</h1><p class="page-sub">Tiers, multiplier modes, and reset policy — owner only</p></div>
+      <div class="config-grid">
+        <div class="config-block">
+          <div class="config-block-header"><div><div class="config-block-title">Status tiers</div><p class="config-block-sub">Add, rename, recolour or remove tiers.</p></div><button class="btn-primary" onclick="addTier()">+ Add tier</button></div>
+          <div id="tiers-editor" class="tiers-editor"></div><div class="tiers-note">Changes save instantly.</div>
+        </div>
+        <div class="config-block">
+          <div class="config-block-header"><div><div class="config-block-title">Multiplier modes</div><p class="config-block-sub">Define named earn-rate presets. Activate from dashboard.</p></div><button class="btn-primary" onclick="addMode()">+ Add mode</button></div>
+          <div id="modes-editor" class="tiers-editor"></div><div class="tiers-note">Product-level overrides take precedence.</div>
+        </div>
+        <div class="config-block">
+          <div class="config-block-title">Status reset policy</div>
+          <p class="config-block-sub">Controls when qualifying spend resets.</p>
+          <div class="policy-options">
+            <label class="policy-option" id="pol-calendar" onclick="setResetPolicy('calendar')"><input type="radio" name="reset" id="r-calendar" value="calendar"/><div class="policy-content"><div class="policy-name">Calendar year reset</div><div class="policy-desc">Qualifying spend resets on Jan 1st every year.</div></div><div class="policy-check" id="check-calendar" style="visibility:hidden">✓</div></label>
+            <label class="policy-option" id="pol-rolling" onclick="setResetPolicy('rolling')"><input type="radio" name="reset" id="r-rolling" value="rolling"/><div class="policy-content"><div class="policy-name">Rolling 365-day window</div><div class="policy-desc">Only last 365 days of spend count toward status.</div></div><div class="policy-check" id="check-rolling" style="visibility:hidden">✓</div></label>
+          </div>
+          <div class="policy-active-notice" id="policy-notice">Active: <strong>Calendar year reset</strong></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- MODALS -->
+<div class="modal-overlay" id="modal-add-customer" onclick="closeModal('add-customer')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header"><div class="modal-title">Register customer</div><button class="modal-close" onclick="closeModal('add-customer')">✕</button></div>
+    <div class="modal-body">
+      <div class="notice-box">Special tier customers are automatically assigned the highest status.</div>
+      <div class="field-row"><div class="field"><label>First name</label><input id="fn" type="text" placeholder="Jane"/></div><div class="field"><label>Last name</label><input id="ln" type="text" placeholder="Smith"/></div></div>
+      <div class="field"><label>Email</label><input id="em" type="email" placeholder="jane@example.com"/></div>
+      <div class="field-row">
+        <div class="field"><label>Phone</label><input id="ph" type="text" placeholder="+1 555-0100"/></div>
+        <div class="field"><label>Points tier</label><select id="ptier"><option value="regular">Regular</option><option value="special">Special (→ highest status)</option></select></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn-secondary" onclick="closeModal('add-customer')">Cancel</button><button class="btn-primary" onclick="addCustomer()">Register</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-product" onclick="closeModal('product')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header"><div class="modal-title" id="prod-modal-title">Add product</div><button class="modal-close" onclick="closeModal('product')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="prd-id"/>
+      <div class="field-row"><div class="field" style="flex:2"><label>Product name</label><input id="prd-name" type="text" placeholder="Espresso Blend 250g"/></div><div class="field"><label>SKU</label><input id="prd-sku" type="text" placeholder="SKU-001"/></div></div>
+      <div class="field-row"><div class="field"><label>Category</label><input id="prd-cat" type="text" placeholder="Coffee"/></div><div class="field"><label>Price ($)</label><input id="prd-price" type="number" min="0" step="0.01" placeholder="12.99"/></div></div>
+      <div class="field-row">
+        <div class="field"><label>Points multiplier override</label><input id="prd-override" type="number" min="0" step="0.5" placeholder="Blank = use active mode"/><div style="font-size:11px;color:#94a3b8;margin-top:4px">e.g. 3 = triple points regardless of active mode</div></div>
+        <div class="field"><label>Status</label><select id="prd-active"><option value="1">Active</option><option value="0">Inactive</option></select></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn-secondary" onclick="closeModal('product')">Cancel</button><button class="btn-primary" onclick="saveProduct()">Save product</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-status-override" onclick="closeModal('status-override')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:420px">
+    <div class="modal-header"><div class="modal-title">Override customer status</div><button class="modal-close" onclick="closeModal('status-override')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="so-customer-id"/>
+      <div class="notice-box" id="so-cust-name" style="font-weight:500;color:#374151"></div>
+      <div class="field" style="margin-top:10px">
+        <label>Status tier</label>
+        <select id="so-tier-sel"><option value="">Auto (based on qualifying spend)</option></select>
+      </div>
+      <div class="notice-box" style="margin-top:10px">Choosing "Auto" removes the override and lets spend determine the status. A 📌 pin icon shows when a status is manually overridden.</div>
+    </div>
+    <div class="modal-footer"><button class="btn-secondary" onclick="closeModal('status-override')">Cancel</button><button class="btn-primary" onclick="saveStatusOverride()">Save</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-appeasement" onclick="closeModal('appeasement')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:420px">
+    <div class="modal-header"><div class="modal-title">Add appeasement points</div><button class="modal-close" onclick="closeModal('appeasement')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="ap-cust-id"/>
+      <div class="notice-box" id="ap-cust-name" style="font-weight:500;color:#374151"></div>
+      <div class="field" style="margin-top:10px"><label>Points to add</label><input id="ap-points" type="number" min="1" placeholder="e.g. 500"/></div>
+      <div class="field"><label>Reason (required)</label><input id="ap-reason" type="text" placeholder="e.g. Points lost due to system error"/></div>
+      <div class="notice-box" style="margin-top:10px">Appeasement points appear in the ledger as a separate line item and are tracked separately from purchase-based points.</div>
+    </div>
+    <div class="modal-footer"><button class="btn-secondary" onclick="closeModal('appeasement')">Cancel</button><button class="btn-primary" onclick="saveAppeasement()">Add points</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-invite-user" onclick="closeModal('invite-user')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:440px">
+    <div class="modal-header"><div class="modal-title">Add team member</div><button class="modal-close" onclick="closeModal('invite-user')">✕</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Full name</label><input id="inv-name" type="text" placeholder="Jane Smith"/></div>
+      <div class="field"><label>Email</label><input id="inv-email" type="email" placeholder="jane@brand.com"/></div>
+      <div class="field"><label>Password</label><input id="inv-password" type="password" placeholder="Min 6 chars"/></div>
+      <div class="field"><label>Role</label>
+        <select id="inv-role">
+          <option value="admin">Admin — can register customers, add transactions, add appeasement, override status</option>
+          <option value="readonly">Readonly — view only, no writes</option>
+        </select>
+      </div>
+      <div class="auth-error" id="inv-error" style="display:none"></div>
+    </div>
+    <div class="modal-footer"><button class="btn-secondary" onclick="closeModal('invite-user')">Cancel</button><button class="btn-primary" onclick="inviteUser()">Add member</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-create-vendor" onclick="closeModal('create-vendor')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:440px">
+    <div class="modal-header"><div class="modal-title">Create vendor account</div><button class="modal-close" onclick="closeModal('create-vendor')">✕</button></div>
+    <div class="modal-body">
+      <div class="notice-box">The vendor will be able to sign in immediately with these credentials.</div>
+      <div class="field"><label>Business name</label><input id="av-name" type="text" placeholder="Acme Retail"/></div>
+      <div class="field"><label>Email</label><input id="av-email" type="email" placeholder="vendor@brand.com"/></div>
+      <div class="field-row"><div class="field"><label>Password</label><input id="av-password" type="password" placeholder="Min 6 chars"/></div><div class="field"><label>Confirm</label><input id="av-confirm" type="password"/></div></div>
+      <div class="auth-error" id="av-error" style="display:none"></div>
+    </div>
+    <div class="modal-footer"><button class="btn-secondary" onclick="closeModal('create-vendor')">Cancel</button><button class="btn-primary" id="av-submit-btn" onclick="adminCreateVendor()">Create vendor</button></div>
+  </div>
+</div>
+
+<!-- DRAWER -->
+<div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
+<div class="drawer" id="customer-drawer">
+  <div class="drawer-header">
+    <div><div class="drawer-title" id="d-name"></div><div class="drawer-sub" id="d-sub"></div></div>
+    <button class="modal-close" onclick="closeDrawer()">✕</button>
+  </div>
+  <div class="drawer-body">
+    <div class="tier-progress-bar" id="d-ladder"></div>
+    <div class="detail-grid">
+      <div class="detail-row"><span class="detail-label">Customer ID</span><span class="cid-pill" id="d-cid"></span></div>
+      <div class="detail-row"><span class="detail-label">Email</span><span id="d-email"></span></div>
+      <div class="detail-row"><span class="detail-label">Phone</span><span id="d-phone"></span></div>
+      <div class="detail-row"><span class="detail-label">Points tier</span><span id="d-ptier"></span></div>
+      <div class="detail-row"><span class="detail-label">Status</span><span id="d-status"></span></div>
+      <div class="detail-row"><span class="detail-label">Qualifying spend</span><span id="d-qspend" class="detail-val"></span></div>
+      <div class="detail-row"><span class="detail-label">Points earned</span><span id="d-earned" class="detail-val earn"></span></div>
+      <div class="detail-row"><span class="detail-label">Points deducted</span><span id="d-deducted" class="detail-val ret"></span></div>
+      <div class="detail-row"><span class="detail-label">Net points</span><span id="d-net" class="detail-val"></span></div>
+    </div>
+    <div class="drawer-section-title">Transaction history</div>
+    <div id="d-txns"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js"></script>
+<script src="db.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
