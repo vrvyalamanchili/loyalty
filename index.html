@@ -24,20 +24,7 @@
       <div class="field"><label>Password</label><input id="login-password" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')handleLogin()"/></div>
       <div class="auth-error" id="login-error" style="display:none"></div>
       <button class="btn-primary auth-btn" id="login-btn" onclick="handleLogin()">Sign in</button>
-      <div class="auth-switch">No account? <a href="#" onclick="showAuthScreen('register');return false">Register your brand →</a></div>
-    </div>
-    <div id="auth-register" style="display:none">
-      <div class="auth-title">Register your brand</div>
-      <div class="auth-sub">Creates an owner account. Invite team members after setup.</div>
-      <div class="field"><label>Business name</label><input id="reg-name" type="text" placeholder="Acme Retail"/></div>
-      <div class="field"><label>Email</label><input id="reg-email" type="email" placeholder="you@brand.com"/></div>
-      <div class="field-row">
-        <div class="field"><label>Password</label><input id="reg-password" type="password" placeholder="Min 6 chars"/></div>
-        <div class="field"><label>Confirm</label><input id="reg-confirm" type="password" onkeydown="if(event.key==='Enter')handleRegister()"/></div>
-      </div>
-      <div class="auth-error" id="register-error" style="display:none"></div>
-      <button class="btn-primary auth-btn" id="register-btn" onclick="handleRegister()">Create account</button>
-      <div class="auth-switch"><a href="#" onclick="showAuthScreen('login');return false">← Back to sign in</a></div>
+      <div class="auth-switch" style="color:#94a3b8;font-size:12px">Contact your administrator to get access.</div>
     </div>
   </div>
 </div>
@@ -98,6 +85,7 @@
       <button class="nav-item" onclick="switchToTab('transaction',this)"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>Add Transaction</button>
       <button class="nav-item" onclick="switchToTab('ledger',this)"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>Ledger</button>
       <button class="nav-item" id="nav-team" onclick="switchToTab('team',this)"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Team</button>
+      <button class="nav-item" id="nav-api" onclick="switchToTab('api',this)"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>API</button>
       <button class="nav-item" id="nav-config" onclick="switchToTab('config',this)"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M4.93 19.07l1.41-1.41m11.32-11.32 1.41-1.41"/></svg>Config</button>
     </nav>
     <div class="sidebar-footer">
@@ -132,7 +120,7 @@
       <div class="table-wrap">
         <div class="empty-state" id="cust-empty"><svg width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg><p>No customers yet.</p></div>
         <table class="data-table" id="cust-table" style="display:none">
-          <thead><tr><th>Customer ID</th><th>Name</th><th>Email</th><th>Pts tier</th><th>Status</th><th>Qualifying spend</th><th>Net points</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Customer ID</th><th>Name</th><th class="hide-mobile">Email</th><th class="hide-mobile">Pts tier</th><th>Status</th><th class="hide-mobile">Qualifying spend</th><th>Net points</th><th>Actions</th></tr></thead>
           <tbody id="cust-tbody"></tbody>
         </table>
       </div>
@@ -167,6 +155,10 @@
           <div class="field"><label>Product (optional)</label><select id="prod-sel" onchange="updatePreview()"><option value="">— no product / manual amount —</option></select></div>
           <div class="field"><label>Amount ($)</label><input type="number" id="amt" min="0" placeholder="0.00" oninput="this.dataset.manual='1';updatePreview()"/></div>
         </div>
+        <div class="field-row">
+          <div class="field"><label>Quantity</label><input type="number" id="qty" min="1" value="1" oninput="updatePreview()"/></div>
+          <div class="field" id="total-display-wrap" style="justify-content:flex-end;padding-bottom:2px"><label>Line total</label><div class="total-display" id="line-total">$0.00</div></div>
+        </div>
         <div class="field"><label>Description</label><input type="text" id="desc" placeholder="e.g. In-store purchase"/></div>
         <div class="preview-box" id="txn-preview">Select order type and enter an amount.</div>
         <button class="btn-primary" onclick="addTransaction()">Add transaction →</button>
@@ -183,7 +175,7 @@
       <div class="table-wrap">
         <div class="empty-state" id="ledger-empty"><svg width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg><p>No transactions yet.</p></div>
         <table class="data-table" id="ledger-table" style="display:none">
-          <thead><tr><th>Txn ID</th><th>Date</th><th>Customer ID</th><th>Customer</th><th>Product</th><th>Description</th><th>Amount</th><th>Mult</th><th>Points</th><th>Kind</th><th>By</th><th>Ref</th><th></th></tr></thead>
+          <thead><tr><th>Txn ID</th><th>Date</th><th>Customer ID</th><th>Customer</th><th class="hide-mobile">Product</th><th class="hide-mobile">Description</th><th>Amount</th><th class="hide-mobile">Mult</th><th>Points</th><th>Kind</th><th class="hide-mobile">By</th><th class="hide-mobile">Ref</th><th></th></tr></thead>
           <tbody id="ledger-tbody"></tbody>
         </table>
       </div>
@@ -221,6 +213,61 @@
             <tr style="border-top:1px solid #f1f5f9"><td style="padding:6px 10px;color:#374151">Invite / remove team members</td><td style="text-align:center;color:#94a3b8">—</td><td style="text-align:center;color:#94a3b8">—</td><td style="text-align:center">✓</td></tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- API KEYS -->
+    <div id="tab-api" class="panel">
+      <div class="page-header-row">
+        <div><h1>API Access</h1><p class="page-sub">Manage API keys and test the REST API</p></div>
+        <button class="btn-primary" onclick="openModal('create-api-key')">+ Create API key</button>
+      </div>
+
+      <!-- keys table -->
+      <div class="table-wrap" style="margin-bottom:24px">
+        <div class="empty-state" id="api-empty"><svg width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><p>No API keys yet. Create one to start integrating.</p></div>
+        <table class="data-table" id="api-table" style="display:none">
+          <thead><tr><th>Key ID</th><th>Label</th><th>API Key</th><th>Status</th><th>Created</th><th>Last used</th><th>Actions</th></tr></thead>
+          <tbody id="api-tbody"></tbody>
+        </table>
+      </div>
+
+      <!-- API reference -->
+      <div class="section-card" style="margin-bottom:16px">
+        <div class="section-title">REST API Reference</div>
+        <p style="font-size:12px;color:#64748b;margin-bottom:14px">Call <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px">loyaltyApi(method, path, body, apiKey)</code> in JS, or use the playground below. Base path: <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px">/api</code></p>
+        <div class="api-ref-table">
+          <div class="api-ref-row header"><span>Method</span><span>Endpoint</span><span>Description</span><span>Body / Params</span></div>
+          <div class="api-ref-row"><span class="method get">GET</span><span>/customers</span><span>List all customers</span><span>—</span></div>
+          <div class="api-ref-row"><span class="method get">GET</span><span>/customers/:id</span><span>Get customer by ID</span><span>—</span></div>
+          <div class="api-ref-row"><span class="method post">POST</span><span>/customers</span><span>Create customer</span><span>first_name, last_name, email?, phone?, points_tier?</span></div>
+          <div class="api-ref-row"><span class="method patch">PATCH</span><span>/customers/:id</span><span>Update customer info or status</span><span>first_name?, last_name?, email?, phone?, points_tier?, status_override?</span></div>
+          <div class="api-ref-row"><span class="method get">GET</span><span>/transactions</span><span>List all transactions</span><span>customer_id? (in body)</span></div>
+          <div class="api-ref-row"><span class="method get">GET</span><span>/transactions/:id</span><span>Get transaction by ID</span><span>—</span></div>
+          <div class="api-ref-row"><span class="method post">POST</span><span>/transactions</span><span>Record a purchase</span><span>customer_id, amount (unit price), quantity?, product_id?, description?, order_type?</span></div>
+          <div class="api-ref-row"><span class="method get">GET</span><span>/points/:customer_id</span><span>Get points + status summary</span><span>—</span></div>
+        </div>
+      </div>
+
+      <!-- playground -->
+      <div class="section-card">
+        <div class="section-title">API Playground</div>
+        <div class="field-row" style="margin-bottom:10px">
+          <div class="field" style="flex:0 0 120px">
+            <label>Method</label>
+            <select id="pg-method">
+              <option>GET</option><option>POST</option><option>PATCH</option>
+            </select>
+          </div>
+          <div class="field"><label>Path</label><input id="pg-path" type="text" placeholder="/customers" value="/customers"/></div>
+          <div class="field" style="flex:2"><label>API Key</label><input id="pg-key" type="text" placeholder="loy_..."/></div>
+        </div>
+        <div class="field" style="margin-bottom:10px">
+          <label>Request body (JSON, for POST/PATCH/GET with filters)</label>
+          <textarea id="pg-body" rows="3" style="width:100%;font-size:13px;font-family:monospace;padding:8px;border:1px solid #e2e8f0;border-radius:8px;resize:vertical" placeholder='{"first_name":"Jane","last_name":"Smith"}'></textarea>
+        </div>
+        <button class="btn-primary" onclick="runApiPlayground()">Run →</button>
+        <pre id="pg-result" style="margin-top:12px;background:#0f172a;color:#e2e8f0;padding:14px;border-radius:10px;font-size:12px;overflow-x:auto;min-height:60px;white-space:pre-wrap"></pre>
       </div>
     </div>
 
@@ -343,6 +390,35 @@
       <div class="auth-error" id="av-error" style="display:none"></div>
     </div>
     <div class="modal-footer"><button class="btn-secondary" onclick="closeModal('create-vendor')">Cancel</button><button class="btn-primary" id="av-submit-btn" onclick="adminCreateVendor()">Create vendor</button></div>
+  </div>
+</div>
+
+<!-- PARTIAL RETURN MODAL -->
+<div class="modal-overlay" id="modal-partial-return" onclick="closeModal('partial-return')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:440px">
+    <div class="modal-header"><div class="modal-title">Process return</div><button class="modal-close" onclick="closeModal('partial-return')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="pr-txn-id"/>
+      <div class="notice-box" id="pr-txn-info" style="font-size:12px;font-family:monospace;color:#374151"></div>
+      <div class="field" style="margin-top:12px">
+        <label>Quantity to return <span id="pr-qty-max" style="color:#94a3b8;font-size:11px"></span></label>
+        <input id="pr-qty" type="number" min="1" value="1" oninput="updateReturnPreview()"/>
+      </div>
+      <div class="preview-box" id="pr-preview" style="margin-top:10px">Enter quantity to see refund preview.</div>
+    </div>
+    <div class="modal-footer"><button class="btn-secondary" onclick="closeModal('partial-return')">Cancel</button><button class="btn-primary" onclick="savePartialReturn()">Confirm return</button></div>
+  </div>
+</div>
+
+<!-- CREATE API KEY MODAL -->
+<div class="modal-overlay" id="modal-create-api-key" onclick="closeModal('create-api-key')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:400px">
+    <div class="modal-header"><div class="modal-title">Create API key</div><button class="modal-close" onclick="closeModal('create-api-key')">✕</button></div>
+    <div class="modal-body">
+      <div class="notice-box">The key will be shown once after creation — copy it immediately.</div>
+      <div class="field" style="margin-top:10px"><label>Label</label><input id="api-key-label" type="text" placeholder="e.g. POS Integration, Mobile App"/></div>
+    </div>
+    <div class="modal-footer"><button class="btn-secondary" onclick="closeModal('create-api-key')">Cancel</button><button class="btn-primary" onclick="createApiKey()">Create key</button></div>
   </div>
 </div>
 

@@ -49,7 +49,6 @@ function showAuthScreen(screen) {
   document.getElementById('auth-layer').style.display  = 'flex';
   document.getElementById('app-layer').style.display   = 'none';
   document.getElementById('admin-layer').style.display = 'none';
-  ['login','register'].forEach(s => document.getElementById('auth-'+s).style.display = s===screen?'block':'none');
   clearAuthErrors();
 }
 function clearAuthErrors() {
@@ -77,22 +76,6 @@ async function handleLogin() {
   currentVendor=r.vendor; currentAdmin=null;
   document.getElementById('login-password').value='';
   showVendorApp();
-}
-
-async function handleRegister() {
-  const name=document.getElementById('reg-name').value.trim();
-  const email=document.getElementById('reg-email').value.trim();
-  const pw  =document.getElementById('reg-password').value;
-  const conf=document.getElementById('reg-confirm').value;
-  if(!name||!email||!pw){showAuthError('register-error','All fields required.');return;}
-  if(pw.length<6){showAuthError('register-error','Password min 6 characters.');return;}
-  if(pw!==conf){showAuthError('register-error','Passwords do not match.');return;}
-  const btn=document.getElementById('register-btn'); btn.textContent='Creating…'; btn.disabled=true;
-  const r=await dbRegisterVendor({name,email,password:pw});
-  btn.textContent='Create account'; btn.disabled=false;
-  if(r.error){showAuthError('register-error',r.error);return;}
-  const login=await dbLoginVendor({email,password:pw});
-  if(login.ok){currentVendor=login.vendor; showVendorApp();}
 }
 
 function handleLogout() {
@@ -130,34 +113,52 @@ function showVendorApp(impersonateVendor=null) {
 }
 
 function applyRoleNav() {
-  // config tab only for owner
   const configNav=document.getElementById('nav-config');
   if(configNav) configNav.style.display=canConfig()?'':'none';
-  // team tab only for owner
   const teamNav=document.getElementById('nav-team');
   if(teamNav) teamNav.style.display=canConfig()?'':'none';
+  const apiNav=document.getElementById('nav-api');
+  if(apiNav) apiNav.style.display=canConfig()?'':'none';
 }
 
 function adminBackToPanel() { adminViewingVendor=null; document.getElementById('app-layer').style.display='none'; document.getElementById('admin-layer').style.display='flex'; }
 
 /* ══════════════════════════════════════════ TIER / STATUS HELPERS ══════════════════════════════════════════ */
 function resolveStatus(customer) {
-  // status_override takes precedence
-  const tiers=dbGetTiers(vid());
-  if(customer.status_override) {
-    const t=tiers.find(x=>x.id===customer.status_override);
-    if(t) return { tier:t, spend:dbGetQualifyingSpend(vid(),customer.customer_id,dbGetConfig(vid()).reset_policy||'calendar'), overridden:true };
+  const tiers  = dbGetTiers(vid());
+  const cfg    = dbGetConfig(vid());
+  const spend  = dbGetQualifyingSpend(vid(), customer.customer_id, cfg.reset_policy || 'calendar');
+  const highest = tiers[tiers.length - 1];
+  const lowest  = tiers[0];
+
+  // Special users always hold the highest status — spend expiry doesn't affect them
+  if (customer.points_tier === 'special') {
+    return { tier: highest, spend, overridden: true, reason: 'special' };
   }
-  const cfg=dbGetConfig(vid());
-  const spend=dbGetQualifyingSpend(vid(),customer.customer_id,cfg.reset_policy||'calendar');
-  let status=tiers[0];
-  for(const t of tiers){ if(spend>=t.min_spend) status=t; }
-  return {tier:status, spend, overridden:false};
+
+  // Manual override takes next precedence (regular users only)
+  if (customer.status_override) {
+    const t = tiers.find(x => x.id === customer.status_override);
+    if (t) return { tier: t, spend, overridden: true, reason: 'manual' };
+  }
+
+  // Regular users: if qualifying spend is 0 (expired / not yet spent), drop to lowest tier
+  if (spend <= 0) {
+    return { tier: lowest, spend, overridden: false, reason: 'expired' };
+  }
+
+  // Regular users: resolve by spend thresholds
+  let status = lowest;
+  for (const t of tiers) { if (spend >= t.min_spend) status = t; }
+  return { tier: status, spend, overridden: false, reason: 'spend' };
 }
-function statusBadgeHtml(tier,overridden=false) {
-  if(!tier) return '';
-  const pin=overridden?` <span title="Manually overridden" style="font-size:9px">📌</span>`:'';
-  return `<span class="status-badge" style="background:${tier.bg_color};color:${tier.color}">${tier.name}${pin}</span>`;
+function statusBadgeHtml(tier, overridden=false, reason='') {
+  if (!tier) return '';
+  let indicator = '';
+  if (reason === 'special')  indicator = ` <span title="Special user — permanently holds highest status" style="font-size:9px">⭐</span>`;
+  else if (reason === 'manual') indicator = ` <span title="Manually overridden" style="font-size:9px">📌</span>`;
+  else if (reason === 'expired') indicator = ` <span title="Points expired — reset to base tier" style="font-size:9px">↩</span>`;
+  return `<span class="status-badge" style="background:${tier.bg_color};color:${tier.color}">${tier.name}${indicator}</span>`;
 }
 function tierProgressHtml(customer) {
   const tiers=dbGetTiers(vid()), cfg=dbGetConfig(vid());
@@ -194,6 +195,7 @@ function switchToTab(t,el) {
   if(t==='transaction') { populateCustSelect(); populateProductSelect(); }
   if(t==='ledger')      { populateLedgerFilter(); renderLedger(); }
   if(t==='team')        renderTeam();
+  if(t==='api')         renderApiKeys();
   if(t==='config')      renderConfig();
 }
 
@@ -272,15 +274,15 @@ function renderCustomers() {
   if(!customers.length){empty.style.display='flex';table.style.display='none';return;}
   empty.style.display='none'; table.style.display='table';
   document.getElementById('cust-tbody').innerHTML=customers.map(c=>{
-    const {tier,spend,overridden}=resolveStatus(c), net=c.points_earned-c.points_deducted;
+    const {tier,spend,overridden,reason}=resolveStatus(c), net=c.points_earned-c.points_deducted;
     const canEditStatus=isAtLeastAdmin();
     return `<tr>
       <td><span class="cid-pill clickable" onclick="openDrawer('${c.customer_id}')">${c.customer_id}</span></td>
       <td style="font-weight:500">${c.first_name} ${c.last_name}</td>
-      <td style="color:#64748b">${c.email||'—'}</td>
-      <td><span class="pts-tier-badge ${c.points_tier}">${c.points_tier}</span></td>
-      <td>${statusBadgeHtml(tier,overridden)} ${canEditStatus?`<button class="btn-icon" title="Override status" onclick="openStatusOverride('${c.customer_id}')">✎</button>`:''}</td>
-      <td>$${spend.toFixed(2)}</td>
+      <td class="hide-mobile" style="color:#64748b">${c.email||'—'}</td>
+      <td class="hide-mobile"><span class="pts-tier-badge ${c.points_tier}">${c.points_tier}</span></td>
+      <td>${statusBadgeHtml(tier,overridden,reason)} ${canEditStatus?`<button class="btn-icon" title="Override status" onclick="openStatusOverride('${c.customer_id}')">✎</button>`:''}</td>
+      <td class="hide-mobile">$${spend.toFixed(2)}</td>
       <td style="font-weight:600">${net.toLocaleString()} pts</td>
       <td style="display:flex;gap:4px">
         <button class="btn-view" onclick="openDrawer('${c.customer_id}')">View</button>
@@ -294,6 +296,9 @@ function renderCustomers() {
 function openStatusOverride(customerId) {
   if(!isAtLeastAdmin()){alert('Admins and owners can override customer status.');return;}
   const c=dbGetCustomer(vid(),customerId); if(!c) return;
+  if(c.points_tier==='special'){
+    alert('Special users always hold the highest status — their status cannot be manually overridden.');return;
+  }
   const tiers=dbGetTiers(vid());
   document.getElementById('so-cust-name').textContent=`${c.first_name} ${c.last_name} (${c.customer_id})`;
   const sel=document.getElementById('so-tier-sel');
@@ -380,58 +385,76 @@ function populateProductSelect() {
 function updatePreview() {
   const isGuest=document.getElementById('order-type').value==='guest';
   const prodSel=document.getElementById('prod-sel'), amtInput=document.getElementById('amt');
+  const qtyInput=document.getElementById('qty');
   const el=document.getElementById('txn-preview'), cidRow=document.getElementById('cust-id-row');
+  const lineTotalEl=document.getElementById('line-total');
+
   if(prodSel&&prodSel.value&&!amtInput.dataset.manual){
     const p=dbGetProduct(vid(),prodSel.value); if(p) amtInput.value=parseFloat(p.price).toFixed(2);
   }
-  const amt=parseFloat(amtInput?.value)||0;
-  if(isGuest){if(cidRow)cidRow.style.display='none'; el.textContent=amt?`Guest order $${amt.toFixed(2)} — no points.`:'Enter amount for guest order.'; return;}
+
+  const unitAmt=parseFloat(amtInput?.value)||0;
+  const qty=Math.max(1, parseInt(qtyInput?.value)||1);
+  const totalAmt=unitAmt*qty;
+
+  // update line total display
+  if(lineTotalEl) lineTotalEl.textContent = unitAmt ? `$${totalAmt.toFixed(2)}${qty>1?` (${qty} × $${unitAmt.toFixed(2)})`:''}` : '$0.00';
+
+  if(isGuest){if(cidRow)cidRow.style.display='none'; el.textContent=totalAmt?`Guest order $${totalAmt.toFixed(2)} — no points.`:'Enter amount for guest order.'; return;}
   const cid=document.getElementById('cust-sel')?.value;
   if(!cid){if(cidRow)cidRow.style.display='none'; el.textContent='Select a customer and enter an amount.'; return;}
   const c=dbGetCustomer(vid(),cid);
   document.getElementById('cid-show').textContent=cid;
-  document.getElementById('status-inline').innerHTML=statusBadgeHtml(resolveStatus(c).tier);
+  const _rs=resolveStatus(c); document.getElementById('status-inline').innerHTML=statusBadgeHtml(_rs.tier,_rs.overridden,_rs.reason);
   if(cidRow) cidRow.style.display='flex';
-  if(amt&&c){
+  if(totalAmt&&c){
     let mult=getMult(c.points_tier);
     if(prodSel&&prodSel.value){const p=dbGetProduct(vid(),prodSel.value);if(p&&p.pts_override!=null) mult=p.pts_override;}
-    const pts=Math.round(amt*mult), cfg=dbGetConfig(vid());
-    const curSpend=dbGetQualifyingSpend(vid(),cid,cfg.reset_policy||'calendar'), newSpend=curSpend+amt;
+    const pts=Math.round(totalAmt*mult), cfg=dbGetConfig(vid());
+    const curSpend=dbGetQualifyingSpend(vid(),cid,cfg.reset_policy||'calendar'), newSpend=curSpend+totalAmt;
     const tiers=dbGetTiers(vid()); let upgrade='';
     for(let i=tiers.length-1;i>=0;i--){if(newSpend>=tiers[i].min_spend&&curSpend<tiers[i].min_spend){upgrade=` 🎉 Will reach ${tiers[i].name}!`;break;}}
-    el.textContent=`${c.first_name} earns ${pts} pts (${mult}×). Spend: $${curSpend.toFixed(2)} → $${newSpend.toFixed(2)}.${upgrade}`;
+    el.textContent=`${c.first_name} earns ${pts} pts (${mult}× on $${totalAmt.toFixed(2)}).  Spend: $${curSpend.toFixed(2)} → $${newSpend.toFixed(2)}.${upgrade}`;
   } else { el.textContent='Enter an amount to preview points.'; }
 }
 function addTransaction() {
   if(!guardWrite()) return;
   const isGuest=document.getElementById('order-type').value==='guest';
-  const amtInput=document.getElementById('amt'), amt=parseFloat(amtInput?.value);
+  const amtInput=document.getElementById('amt');
+  const qtyInput=document.getElementById('qty');
+  const unitAmt=parseFloat(amtInput?.value);
+  const qty=Math.max(1, parseInt(qtyInput?.value)||1);
+  const totalAmt=parseFloat(((unitAmt||0)*qty).toFixed(2));
   const prodSel=document.getElementById('prod-sel'), descInput=document.getElementById('desc');
   let desc=descInput?.value.trim()||'Purchase';
-  if(!amt||amt<=0){alert('Enter a valid amount.');return;}
+  if(!unitAmt||unitAmt<=0){alert('Enter a valid unit amount.');return;}
   const actor=adminViewingVendor?'platform_admin':(currentVendor?.userName||currentVendor?.email||'');
   if(isGuest){
     const id=dbGenTxnId(vid());
     dbInsertTransaction(vid(),{txn_id:id,date:fmt(new Date()),ts:Date.now(),customer_id:null,cust_name:'Guest',
-      points_tier:'guest',order_type:'guest',product_id:null,product_name:null,description:desc,
-      amount:amt,multiplier:0,points:0,type:'earn',ref_id:null,created_by:actor});
-    if(amtInput){amtInput.value='';delete amtInput.dataset.manual;} if(descInput)descInput.value='';
-    renderDashboard(); alert(`Guest order recorded.\nTxn ID: ${id}\nAmount: $${amt.toFixed(2)}`); return;
+      points_tier:'guest',order_type:'guest',product_id:null,product_name:null,
+      description:`${desc}${qty>1?` (qty: ${qty})`:''}`,
+      unit_price:unitAmt, quantity:qty, amount:totalAmt,
+      multiplier:0,points:0,type:'earn',ref_id:null,created_by:actor});
+    if(amtInput){amtInput.value='';delete amtInput.dataset.manual;} if(descInput)descInput.value=''; if(qtyInput)qtyInput.value='1';
+    renderDashboard(); alert(`Guest order recorded.\nTxn ID: ${id}\nQty: ${qty}\nTotal: $${totalAmt.toFixed(2)}`); return;
   }
   const cid=document.getElementById('cust-sel')?.value; if(!cid){alert('Select a customer.');return;}
   const c=dbGetCustomer(vid(),cid);
   let mult=getMult(c.points_tier), prodId=null, prodName=null;
   if(prodSel&&prodSel.value){const p=dbGetProduct(vid(),prodSel.value);if(p){prodId=p.product_id;prodName=p.name;if(p.pts_override!=null)mult=p.pts_override;}}
-  const pts=Math.round(amt*mult), prevTier=resolveStatus(c).tier, id=dbGenTxnId(vid());
+  const pts=Math.round(totalAmt*mult), prevTier=resolveStatus(c).tier, id=dbGenTxnId(vid());
+  const fullDesc=qty>1?`${desc||prodName||'Purchase'} (qty: ${qty})`:desc||prodName||'Purchase';
   dbInsertTransaction(vid(),{txn_id:id,date:fmt(new Date()),ts:Date.now(),customer_id:cid,
     cust_name:`${c.first_name} ${c.last_name}`,points_tier:c.points_tier,order_type:'registered',
-    product_id:prodId,product_name:prodName,description:desc,amount:amt,multiplier:mult,points:pts,
-    type:'earn',ref_id:null,created_by:actor});
+    product_id:prodId,product_name:prodName,description:fullDesc,
+    unit_price:unitAmt, quantity:qty, amount:totalAmt,
+    multiplier:mult,points:pts,type:'earn',ref_id:null,created_by:actor});
   dbUpdateCustomerPoints(vid(),cid,pts,0);
   const newTier=resolveStatus(c).tier;
-  if(amtInput){amtInput.value='';delete amtInput.dataset.manual;} if(descInput)descInput.value=''; if(prodSel)prodSel.value='';
+  if(amtInput){amtInput.value='';delete amtInput.dataset.manual;} if(descInput)descInput.value=''; if(prodSel)prodSel.value=''; if(qtyInput)qtyInput.value='1';
   updatePreview(); renderDashboard();
-  let msg=`Transaction added!\nTxn ID: ${id}\nCustomer: ${cid}\nPoints: +${pts}`;
+  let msg=`Transaction added!\nTxn ID: ${id}\nCustomer: ${cid}\nQty: ${qty}\nUnit price: $${unitAmt.toFixed(2)}\nTotal: $${totalAmt.toFixed(2)}\nPoints: +${pts}`;
   if(newTier.id!==prevTier.id) msg+=`\n\n🎉 Status: ${prevTier.name} → ${newTier.name}!`;
   alert(msg);
 }
@@ -439,16 +462,70 @@ function returnTransaction(txnId) {
   if(!guardWrite()) return;
   const orig=dbGetTransactions(vid()).find(t=>t.txn_id===txnId);
   if(!orig||orig.returned) return;
-  if(!confirm(`Return ${orig.txn_id}?\nCustomer: ${orig.customer_id||'Guest'}\nPoints to deduct: ${orig.points}`)) return;
-  const id=dbGenTxnId(vid()), actor=adminViewingVendor?'platform_admin':(currentVendor?.userName||'');
-  dbInsertTransaction(vid(),{txn_id:id,date:fmt(new Date()),ts:Date.now(),customer_id:orig.customer_id,
-    cust_name:orig.cust_name,points_tier:orig.points_tier,order_type:orig.order_type,
-    product_id:orig.product_id,product_name:orig.product_name,description:`Return: ${orig.description}`,
-    amount:orig.amount,multiplier:orig.multiplier,points:orig.points,type:'deduct',ref_id:orig.txn_id,created_by:actor});
-  dbMarkReturned(vid(),txnId);
-  if(orig.customer_id) dbUpdateCustomerPoints(vid(),orig.customer_id,0,orig.points);
+  const origQty=orig.quantity||1;
+  const alreadyReturned=orig.qty_returned||0;
+  const returnable=origQty-alreadyReturned;
+  if(returnable<=0){alert('All units for this transaction have already been returned.');return;}
+
+  // open partial return modal
+  document.getElementById('pr-txn-id').value=txnId;
+  document.getElementById('pr-txn-info').textContent=
+    `${orig.txn_id} — ${orig.product_name||orig.description} | Qty: ${origQty} | Unit: $${parseFloat(orig.unit_price||orig.amount).toFixed(2)} | Already returned: ${alreadyReturned}`;
+  document.getElementById('pr-qty').max=returnable;
+  document.getElementById('pr-qty').value=returnable;
+  document.getElementById('pr-qty-max').textContent=`max ${returnable}`;
+  updateReturnPreview(orig);
+  openModal('partial-return');
+}
+
+function updateReturnPreview(orig) {
+  if(!orig) {
+    const txnId=document.getElementById('pr-txn-id').value;
+    orig=dbGetTransactions(vid()).find(t=>t.txn_id===txnId);
+  }
+  if(!orig) return;
+  const qty=Math.max(1,Math.min(parseInt(document.getElementById('pr-qty').value)||1, (orig.quantity||1)-(orig.qty_returned||0)));
+  const unitPrice=parseFloat(orig.unit_price||orig.amount)||0;
+  const unitPts=orig.quantity>1?Math.round(orig.points/orig.quantity):orig.points;
+  const refundAmt=(unitPrice*qty).toFixed(2);
+  const refundPts=Math.round(unitPts*qty);
+  document.getElementById('pr-preview').textContent=
+    `Returning ${qty} unit${qty>1?'s':''} — $${refundAmt} refunded, ${refundPts} pts deducted.`;
+}
+
+function savePartialReturn() {
+  if(!guardWrite()) return;
+  const txnId=document.getElementById('pr-txn-id').value;
+  const orig=dbGetTransactions(vid()).find(t=>t.txn_id===txnId);
+  if(!orig) return;
+  const origQty=orig.quantity||1;
+  const alreadyReturned=orig.qty_returned||0;
+  const returnable=origQty-alreadyReturned;
+  const qtyToReturn=Math.max(1,Math.min(parseInt(document.getElementById('pr-qty').value)||1, returnable));
+  const unitPrice=parseFloat(orig.unit_price||orig.amount)||0;
+  const unitPts=origQty>1?Math.round(orig.points/origQty):orig.points;
+  const refundAmt=parseFloat((unitPrice*qtyToReturn).toFixed(2));
+  const refundPts=Math.round(unitPts*qtyToReturn);
+  const actor=adminViewingVendor?'platform_admin':(currentVendor?.userName||currentVendor?.email||'');
+  const id=dbGenTxnId(vid());
+  const isFullReturn=qtyToReturn>=returnable;
+
+  dbInsertTransaction(vid(),{
+    txn_id:id, date:fmt(new Date()), ts:Date.now(),
+    customer_id:orig.customer_id, cust_name:orig.cust_name,
+    points_tier:orig.points_tier, order_type:orig.order_type,
+    product_id:orig.product_id, product_name:orig.product_name,
+    description:`Return (${qtyToReturn}/${origQty}): ${orig.description}`,
+    unit_price:unitPrice, quantity:qtyToReturn,
+    amount:refundAmt, multiplier:orig.multiplier,
+    points:refundPts, type:'deduct', ref_id:orig.txn_id, created_by:actor
+  });
+  dbMarkPartialReturn(vid(), txnId, qtyToReturn);
+  if(orig.customer_id) dbUpdateCustomerPoints(vid(),orig.customer_id,0,refundPts);
+
+  closeModal('partial-return');
   renderLedger(); renderDashboard();
-  alert(`Return processed!\nReturn Txn: ${id}\nRef: ${orig.txn_id}\nDeducted: ${orig.points} pts`);
+  alert(`Return processed!\nReturn Txn: ${id}\nRef: ${orig.txn_id}\nQty returned: ${qtyToReturn}/${origQty}\nAmount refunded: $${refundAmt}\nPoints deducted: ${refundPts}${isFullReturn?'\nFully returned.':'\nPartial — remaining units still eligible for return.'}`);
 }
 
 /* ══════════════════════════════════════════ LEDGER ══════════════════════════════════════════ */
@@ -483,15 +560,19 @@ function renderLedger() {
       <td style="color:#64748b;white-space:nowrap">${t.date}</td>
       <td>${t.customer_id?`<span class="cid-pill clickable" onclick="openDrawer('${t.customer_id}')">${t.customer_id}</span>`:'<span style="color:#94a3b8;font-size:11px">guest</span>'}</td>
       <td>${t.cust_name}</td>
-      <td style="color:#64748b;font-size:12px">${t.product_name||'—'}</td>
-      <td style="color:#64748b">${t.description}</td>
+      <td class="hide-mobile" style="color:#64748b;font-size:12px">${t.product_name||'—'}</td>
+      <td class="hide-mobile" style="color:#64748b">${t.description}</td>
       <td>${t.amount?'$'+parseFloat(t.amount).toFixed(2):'—'}</td>
-      <td style="text-align:center">${isGuest||isAp?'—':t.multiplier+'×'}</td>
+      <td class="hide-mobile" style="text-align:center">${isGuest||isAp?'—':t.multiplier+'×'}</td>
       <td><span class="pts-pill ${ptsCls}">${isDeduct?'−':'+'}${t.points}</span></td>
       <td><span class="kind-badge ${kindCls}">${kindLabel}</span></td>
-      <td class="txn-id" style="color:#64748b">${t.created_by||'—'}</td>
-      <td class="txn-id">${t.ref_id||'—'}</td>
-      <td>${!isGuest&&!isAp&&isEarn&&!t.returned?`<button class="btn-return" onclick="returnTransaction('${t.txn_id}')">Return</button>`:`<span style="font-size:11px;color:#94a3b8">${t.returned?'returned':'—'}</span>`}</td>
+      <td class="txn-id hide-mobile" style="color:#64748b">${t.created_by||'—'}</td>
+      <td class="txn-id hide-mobile">${t.ref_id||'—'}</td>
+      <td>${!isGuest&&!isAp&&isEarn
+        ? (t.returned
+            ? `<span style="font-size:11px;color:#94a3b8">fully returned</span>`
+            : `<button class="btn-return" onclick="returnTransaction('${t.txn_id}')">Return${(t.qty_returned>0)?` (${t.qty_returned}/${t.quantity||1} done)`:''}</button>`)
+        : `<span style="font-size:11px;color:#94a3b8">${t.returned?'returned':'—'}</span>`}</td>
     </tr>`;
   }).join('');
 }
@@ -499,14 +580,14 @@ function renderLedger() {
 /* ══════════════════════════════════════════ DRAWER ══════════════════════════════════════════ */
 function openDrawer(customerId) {
   const c=dbGetCustomer(vid(),customerId); if(!c) return;
-  const {tier,spend,overridden}=resolveStatus(c), net=c.points_earned-c.points_deducted;
+  const {tier,spend,overridden,reason}=resolveStatus(c), net=c.points_earned-c.points_deducted;
   document.getElementById('d-name').textContent   =`${c.first_name} ${c.last_name}`;
   document.getElementById('d-sub').textContent    =c.email||'No email on file';
   document.getElementById('d-cid').textContent    =c.customer_id;
   document.getElementById('d-email').textContent  =c.email||'—';
   document.getElementById('d-phone').textContent  =c.phone||'—';
   document.getElementById('d-ptier').innerHTML    =`<span class="pts-tier-badge ${c.points_tier}">${c.points_tier}</span>`;
-  document.getElementById('d-status').innerHTML   =statusBadgeHtml(tier,overridden)+(isAtLeastAdmin()?` <button class="btn-icon" onclick="openStatusOverride('${c.customer_id}')">✎</button>`:'');
+  document.getElementById('d-status').innerHTML   =statusBadgeHtml(tier,overridden,reason)+(isAtLeastAdmin()?` <button class="btn-icon" onclick="openStatusOverride('${c.customer_id}')">✎</button>`:'');
   document.getElementById('d-qspend').textContent =`$${spend.toFixed(2)}`;
   document.getElementById('d-earned').textContent =`+${c.points_earned.toLocaleString()} pts`;
   document.getElementById('d-deducted').textContent=c.points_deducted>0?`−${c.points_deducted.toLocaleString()} pts`:'—';
@@ -568,10 +649,11 @@ function saveProduct() {
   if(!price||price<0){alert('Enter a valid price.');return;}
   const overrideVal=document.getElementById('prd-override').value.trim();
   const id=document.getElementById('prd-id').value||dbGenProdId(vid());
-  dbUpsertProduct(vid(),{product_id:id,name,sku:document.getElementById('prd-sku').value.trim(),
+  const result = dbUpsertProduct(vid(),{product_id:id,name,sku:document.getElementById('prd-sku').value.trim(),
     category:document.getElementById('prd-cat').value.trim(),price,
     pts_override:overrideVal!==''?parseFloat(overrideVal):null,
     active:document.getElementById('prd-active').value==='1'?1:0});
+  if (result.error) { alert(result.error); return; }
   closeModal('product'); renderProducts(); populateProductSelect();
 }
 function deleteProduct(productId) {
@@ -727,6 +809,67 @@ function deleteMode(id) {
   if(!guardConfig()) return;
   const r=dbDeleteMode(vid(),id); if(r.error){alert(r.error);return;}
   renderModesEditor(dbGetModes(vid())); buildModeButtons(); renderDashboard();
+}
+
+/* ══════════════════════════════════════════
+   API KEYS TAB
+══════════════════════════════════════════ */
+function renderApiKeys() {
+  if(!document.getElementById('nav-api')) return;
+  const keys=dbGetApiKeys(vid());
+  const empty=document.getElementById('api-empty'), table=document.getElementById('api-table');
+  if(!keys.length){if(empty)empty.style.display='flex';if(table)table.style.display='none';}
+  else{if(empty)empty.style.display='none';if(table)table.style.display='table';}
+  const tbody=document.getElementById('api-tbody'); if(!tbody) return;
+  tbody.innerHTML=keys.map(k=>`<tr>
+    <td class="txn-id">${k.key_id}</td>
+    <td style="font-weight:500">${k.label}</td>
+    <td><code class="api-key-display" id="key-${k.key_id}">${k.active?'\u2022'.repeat(20):k.api_key}</code>
+      ${k.active?`<button class="btn-icon" onclick="toggleKeyReveal('${k.key_id}','${k.api_key}')">👁</button>`:''}
+      ${k.active?`<button class="btn-icon" onclick="copyKey('${k.api_key}')" title="Copy">⧉</button>`:''}
+    </td>
+    <td><span class="status-badge" style="background:${k.active?'#f0fdf4':'#fef2f2'};color:${k.active?'#15803d':'#b91c1c'}">${k.active?'Active':'Revoked'}</span></td>
+    <td style="color:#64748b;font-size:12px">${new Date(k.created_at).toLocaleDateString()}</td>
+    <td style="color:#64748b;font-size:12px">${k.last_used?new Date(k.last_used).toLocaleDateString():'Never'}</td>
+    <td style="display:flex;gap:6px">
+      ${k.active?`<button class="btn-return" onclick="revokeKey('${k.key_id}')">Revoke</button>`:''}
+      <button class="btn-return" onclick="deleteKey('${k.key_id}')">Delete</button>
+    </td>
+  </tr>`).join('');
+}
+function toggleKeyReveal(keyId,apiKey){
+  const el=document.getElementById(`key-${keyId}`);
+  el.textContent=el.textContent.includes('\u2022')?apiKey:'\u2022'.repeat(20);
+}
+function copyKey(apiKey){
+  navigator.clipboard.writeText(apiKey).then(()=>alert('Copied!')).catch(()=>alert(`Key: ${apiKey}`));
+}
+function createApiKey(){
+  if(!guardConfig()) return;
+  const label=document.getElementById('api-key-label').value.trim()||'API Key';
+  const result=dbCreateApiKey(vid(),label);
+  document.getElementById('api-key-label').value='';
+  closeModal('create-api-key');
+  renderApiKeys();
+  alert(`API key created!\n\nKey: ${result.apiKey}\n\nCopy it now — you can reveal it again from the table.`);
+}
+function revokeKey(keyId){
+  if(!confirm('Revoke this key? Integrations using it will break.')) return;
+  dbRevokeApiKey(vid(),keyId); renderApiKeys();
+}
+function deleteKey(keyId){
+  if(!confirm('Delete this key permanently?')) return;
+  dbDeleteApiKey(vid(),keyId); renderApiKeys();
+}
+function runApiPlayground(){
+  const apiKey=document.getElementById('pg-key').value.trim();
+  const method=document.getElementById('pg-method').value;
+  const path=document.getElementById('pg-path').value.trim();
+  const bodyRaw=document.getElementById('pg-body').value.trim();
+  let body={};
+  if(bodyRaw){try{body=JSON.parse(bodyRaw);}catch(e){document.getElementById('pg-result').textContent='Invalid JSON: '+e.message;return;}}
+  const result=loyaltyApi(method,path,body,apiKey);
+  document.getElementById('pg-result').textContent=JSON.stringify(result,null,2);
 }
 
 /* ══════════════════════════════════════════ ADMIN PANEL ══════════════════════════════════════════ */
