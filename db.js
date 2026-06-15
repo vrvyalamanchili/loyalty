@@ -114,16 +114,39 @@ async function dbInit() {
       product_id   TEXT,
       product_name TEXT,
       description  TEXT,
+      unit_price   REAL NOT NULL DEFAULT 0,
+      quantity     INT  NOT NULL DEFAULT 1,
       amount       REAL NOT NULL DEFAULT 0,
       multiplier   REAL NOT NULL DEFAULT 1,
       points       INT  NOT NULL DEFAULT 0,
+      qty_returned INT  NOT NULL DEFAULT 0,
       type         TEXT NOT NULL,
       ref_id       TEXT,
       returned     INT  NOT NULL DEFAULT 0,
       created_by   TEXT,
       PRIMARY KEY (vendor_id, txn_id)
     );
+    CREATE TABLE IF NOT EXISTS api_keys (
+      vendor_id   TEXT NOT NULL,
+      key_id      TEXT NOT NULL,
+      api_key     TEXT NOT NULL UNIQUE,
+      label       TEXT NOT NULL,
+      created_at  INT  NOT NULL,
+      last_used   INT,
+      active      INT  NOT NULL DEFAULT 1,
+      PRIMARY KEY (vendor_id, key_id)
+    );
+    -- partial unique index: only enforce when sku is non-empty
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_product_sku
+      ON products (vendor_id, sku)
+      WHERE sku IS NOT NULL AND sku != '';
   `);
+
+  // Seed demo data only if no vendors exist yet
+  const vendorCount = _scalar(`SELECT COUNT(*) FROM vendors`) || 0;
+  if (vendorCount === 0) {
+    await _seedDemoData();
+  }
 }
 
 /* ─── helpers ─── */
@@ -145,7 +168,56 @@ function _setConfig(v,k,val) {
          ON CONFLICT(vendor_id,key) DO UPDATE SET value=excluded.value`, [v,k,String(val)]);
 }
 
-/* ─── platform admin ─── */
+/* ─── demo seed data ─── */
+async function _seedDemoData() {
+  const now = Date.now();
+  const jun14 = new Date('2026-06-14').getTime();
+
+  // passwords: tcp1@yopmail.com → "tcp1234", gym1@yopmail.com → "gym1234"
+  const tcpHash = await _sha256('tcp1234');
+  const gymHash = await _sha256('gym1234');
+
+  // ── Vendor 1: TCP ──
+  const V1 = 'VND-0001';
+  _exec(`INSERT INTO vendors VALUES (?,?,?,?,0)`, [V1, 'TCP', 'tcp1@yopmail.com', jun14]);
+  _exec(`INSERT INTO vendor_users VALUES (?,?,?,?,?,?,?)`,
+    [V1, 'USR-0001', 'TCP', 'tcp1@yopmail.com', tcpHash, 'owner', jun14]);
+  _seedVendorDefaults(V1);
+  _setConfig(V1, 'cust_counter', '3');
+  _setConfig(V1, 'prod_counter', '4');
+
+  // TCP customers
+  // CUST-0001 — regular, Basic (no override)
+  _exec(`INSERT INTO customers VALUES (?,?,?,?,?,?,?,0,0,?,?)`,
+    [V1,'CUST-0001','Test','User1','testuser1@yopmail.com','','regular',jun14,null]);
+  // CUST-0002 — special, Icon (override = icon tier)
+  _exec(`INSERT INTO customers VALUES (?,?,?,?,?,?,?,0,0,?,?)`,
+    [V1,'CUST-0002','Test','User2','testuser2@yopmail.com','','special',jun14,'icon']);
+  // CUST-0003 — regular, Basic
+  _exec(`INSERT INTO customers VALUES (?,?,?,?,?,?,?,0,0,?,?)`,
+    [V1,'CUST-0003','Test','User3','testuser3@yopmail.com','','regular',jun14,null]);
+
+  // TCP products
+  [
+    [V1,'PROD-0001','Boys Shorts',  'SKU-001','Boys', 3.99, null, 1],
+    [V1,'PROD-0002','Boys T-shirts','SKU-002','Boys', 5.99, null, 1],
+    [V1,'PROD-0003','Girls Shorts', 'SKU-003','Girls',4.99, null, 1],
+    [V1,'PROD-0004','Girls T-shirts','SKU-004','Girls',6.99,null, 1],
+  ].forEach(r => _exec(
+    `INSERT INTO products(vendor_id,product_id,name,sku,category,price,pts_override,active) VALUES(?,?,?,?,?,?,?,?)`, r));
+
+  // ── Vendor 2: GYM ──
+  const V2 = 'VND-0002';
+  _exec(`INSERT INTO vendors VALUES (?,?,?,?,0)`, [V2, 'GYM', 'gym1@yopmail.com', jun14]);
+  _exec(`INSERT INTO vendor_users VALUES (?,?,?,?,?,?,?)`,
+    [V2, 'USR-0001', 'GYM', 'gym1@yopmail.com', gymHash, 'owner', jun14]);
+  _seedVendorDefaults(V2);
+
+  // bump vendor counter so next admin-created vendor starts at VND-0003
+  // (vendors table COUNT is used at registration time, so insert a placeholder config)
+}
+
+
 async function dbAdminLogin({ email, password }) {
   if (email.toLowerCase() !== 'admin@loyaltyos.com') return { error: 'Not an admin account.' };
   const hash = await _sha256(password);
@@ -288,10 +360,19 @@ function dbGetProducts(v,activeOnly=false) {
 }
 function dbGetProduct(v,id) { return _query(`SELECT * FROM products WHERE vendor_id=? AND product_id=?`,[v,id])[0]||null; }
 function dbUpsertProduct(v,p) {
+  // SKU uniqueness check (skip if SKU is blank)
+  if (p.sku && p.sku.trim() !== '') {
+    const conflict = _scalar(
+      `SELECT product_id FROM products WHERE vendor_id=? AND sku=? AND product_id!=?`,
+      [v, p.sku.trim(), p.product_id || '']
+    );
+    if (conflict) return { error: `SKU "${p.sku}" is already used by another product.` };
+  }
   _exec(`INSERT INTO products(vendor_id,product_id,name,sku,category,price,pts_override,active) VALUES(?,?,?,?,?,?,?,?)
          ON CONFLICT(vendor_id,product_id) DO UPDATE SET name=excluded.name,sku=excluded.sku,category=excluded.category,
          price=excluded.price,pts_override=excluded.pts_override,active=excluded.active`,
     [v,p.product_id,p.name,p.sku||'',p.category||'',p.price,p.pts_override??null,p.active??1]);
+  return { ok: true };
 }
 function dbDeleteProduct(v,id) { _exec(`DELETE FROM products WHERE vendor_id=? AND product_id=?`,[v,id]); }
 
@@ -315,9 +396,12 @@ function dbSetStatusOverride(v,customerId,tierId) {
 /* ─── transactions ─── */
 function dbInsertTransaction(v,t) {
   _exec(`INSERT INTO transactions(vendor_id,txn_id,date,ts,customer_id,cust_name,points_tier,order_type,
-         product_id,product_name,description,amount,multiplier,points,type,ref_id,returned,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?)`,
+         product_id,product_name,description,unit_price,quantity,amount,multiplier,points,qty_returned,type,ref_id,returned,created_by)
+         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?)`,
     [v,t.txn_id,t.date,t.ts,t.customer_id||null,t.cust_name,t.points_tier,t.order_type,
-     t.product_id||null,t.product_name||null,t.description,t.amount||0,t.multiplier||1,t.points||0,
+     t.product_id||null,t.product_name||null,t.description,
+     t.unit_price||t.amount||0, t.quantity||1, t.amount||0,
+     t.multiplier||1,t.points||0, 0,
      t.type,t.ref_id||null,t.created_by||null]);
 }
 function dbGetTransactions(v,customerId=null) {
@@ -326,6 +410,14 @@ function dbGetTransactions(v,customerId=null) {
     : _query(`SELECT * FROM transactions WHERE vendor_id=? ORDER BY ts DESC`,[v]);
 }
 function dbMarkReturned(v,txnId) { _exec(`UPDATE transactions SET returned=1 WHERE vendor_id=? AND txn_id=?`,[v,txnId]); }
+function dbMarkPartialReturn(v,txnId,qtyReturned) {
+  const t=_query(`SELECT quantity,qty_returned FROM transactions WHERE vendor_id=? AND txn_id=?`,[v,txnId])[0];
+  if(!t) return;
+  const newQtyReturned=t.qty_returned+qtyReturned;
+  const fullyReturned=newQtyReturned>=t.quantity?1:0;
+  _exec(`UPDATE transactions SET qty_returned=?,returned=? WHERE vendor_id=? AND txn_id=?`,
+    [newQtyReturned,fullyReturned,v,txnId]);
+}
 
 /* ─── qualifying spend ─── */
 function dbGetQualifyingSpend(v,customerId,resetPolicy) {
@@ -358,4 +450,200 @@ function dbExport(vendorName) {
   const url=URL.createObjectURL(blob), a=document.createElement('a');
   a.href=url; a.download=`loyaltyos_${(vendorName||'export').replace(/\s+/g,'_').toLowerCase()}.sqlite`;
   a.click(); URL.revokeObjectURL(url);
+}
+
+/* ══════════════════════════════════════════
+   API KEY MANAGEMENT
+══════════════════════════════════════════ */
+function dbGetApiKeys(v) {
+  return _query(`SELECT key_id,label,api_key,created_at,last_used,active FROM api_keys WHERE vendor_id=? ORDER BY created_at DESC`,[v]);
+}
+function dbCreateApiKey(v, label) {
+  const count=_scalar(`SELECT COUNT(*) FROM api_keys WHERE vendor_id=?`,[v])||0;
+  const keyId='KEY-'+String(count+1).padStart(3,'0');
+  // generate a random key: loy_ + 32 hex chars
+  const raw=Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join('');
+  const apiKey=`loy_${raw}`;
+  _exec(`INSERT INTO api_keys(vendor_id,key_id,api_key,label,created_at,last_used,active) VALUES(?,?,?,?,?,null,1)`,
+    [v,keyId,apiKey,label||'API Key',Date.now()]);
+  return {ok:true, keyId, apiKey};
+}
+function dbRevokeApiKey(v, keyId) {
+  _exec(`UPDATE api_keys SET active=0 WHERE vendor_id=? AND key_id=?`,[v,keyId]);
+}
+function dbDeleteApiKey(v, keyId) {
+  _exec(`DELETE FROM api_keys WHERE vendor_id=? AND key_id=?`,[v,keyId]);
+}
+function _resolveApiKey(apiKey) {
+  // returns vendorId if key is valid and active, else null
+  const row=_query(`SELECT vendor_id FROM api_keys WHERE api_key=? AND active=1`,[apiKey])[0];
+  if(!row) return null;
+  _exec(`UPDATE api_keys SET last_used=? WHERE api_key=?`,[Date.now(),apiKey]);
+  return row.vendor_id;
+}
+
+/* ══════════════════════════════════════════
+   REST API HANDLER
+   Call: loyaltyApi(method, path, body, apiKey)
+   Returns: { status, body }
+══════════════════════════════════════════ */
+function loyaltyApi(method, path, body={}, apiKey='') {
+  // auth
+  const vendorId=_resolveApiKey(apiKey);
+  if(!vendorId) return {status:401, body:{error:'Invalid or missing API key.'}};
+
+  const segments=path.replace(/^\/+|\/+$/g,'').split('/');
+  // segments[0] = resource e.g. 'customers'
+  const resource=segments[0], id=segments[1];
+
+  try {
+    /* ── GET /customers ── */
+    if(resource==='customers' && method==='GET' && !id) {
+      const customers=dbGetCustomers(vendorId).map(c=>_customerView(vendorId,c));
+      return {status:200, body:{data:customers, count:customers.length}};
+    }
+    /* ── GET /customers/:id ── */
+    if(resource==='customers' && method==='GET' && id) {
+      const c=dbGetCustomer(vendorId,id);
+      if(!c) return {status:404, body:{error:'Customer not found.'}};
+      return {status:200, body:{data:_customerView(vendorId,c)}};
+    }
+    /* ── POST /customers ── */
+    if(resource==='customers' && method==='POST') {
+      const {first_name,last_name,email,phone,points_tier}=body;
+      if(!first_name||!last_name) return {status:400, body:{error:'first_name and last_name are required.'}};
+      const custId=dbGenCustId(vendorId);
+      const ptier=(points_tier==='special')?'special':'regular';
+      const statusOverride=ptier==='special'?(dbGetTiers(vendorId).slice(-1)[0]?.id||null):null;
+      dbInsertCustomer(vendorId,{
+        customer_id:custId, first_name, last_name,
+        email:email||'', phone:phone||'', points_tier:ptier,
+        registered_at:Date.now(), status_override:statusOverride
+      });
+      return {status:201, body:{data:_customerView(vendorId,dbGetCustomer(vendorId,custId))}};
+    }
+    /* ── PATCH /customers/:id ── */
+    if(resource==='customers' && method==='PATCH' && id) {
+      const c=dbGetCustomer(vendorId,id);
+      if(!c) return {status:404, body:{error:'Customer not found.'}};
+      const allowed=['first_name','last_name','email','phone','points_tier'];
+      const sets=[], vals=[];
+      allowed.forEach(f=>{
+        if(body[f]!==undefined){ sets.push(`${f}=?`); vals.push(body[f]); }
+      });
+      if(body.status_override!==undefined){
+        sets.push('status_override=?');
+        vals.push(body.status_override||null);
+      }
+      if(!sets.length) return {status:400, body:{error:'No updatable fields provided.'}};
+      vals.push(vendorId,id);
+      _exec(`UPDATE customers SET ${sets.join(',')} WHERE vendor_id=? AND customer_id=?`,vals);
+      return {status:200, body:{data:_customerView(vendorId,dbGetCustomer(vendorId,id))}};
+    }
+    /* ── GET /transactions ── */
+    if(resource==='transactions' && method==='GET' && !id) {
+      const custFilter=body.customer_id||null;
+      const txns=dbGetTransactions(vendorId,custFilter).map(_txnView);
+      return {status:200, body:{data:txns, count:txns.length}};
+    }
+    /* ── GET /transactions/:id ── */
+    if(resource==='transactions' && method==='GET' && id) {
+      const txn=dbGetTransactions(vendorId).find(t=>t.txn_id===id);
+      if(!txn) return {status:404, body:{error:'Transaction not found.'}};
+      return {status:200, body:{data:_txnView(txn)}};
+    }
+    /* ── POST /transactions ── */
+    if(resource==='transactions' && method==='POST') {
+      const {customer_id,amount,description,product_id,quantity,order_type}=body;
+      if(!customer_id) return {status:400, body:{error:'customer_id is required.'}};
+      if(!amount||amount<=0) return {status:400, body:{error:'amount must be a positive number.'}};
+      const c=dbGetCustomer(vendorId,customer_id);
+      if(!c) return {status:404, body:{error:'Customer not found.'}};
+      const qty=Math.max(1,parseInt(quantity)||1);
+      let mult=c.points_tier==='special'
+        ?(dbGetActiveMode(vendorId)?.spl_mult||1)
+        :(dbGetActiveMode(vendorId)?.reg_mult||1);
+      let prodId=null, prodName=null;
+      if(product_id){
+        const p=dbGetProduct(vendorId,product_id);
+        if(!p) return {status:404, body:{error:'Product not found.'}};
+        prodId=p.product_id; prodName=p.name;
+        if(p.pts_override!=null) mult=p.pts_override;
+      }
+      const unitPrice=parseFloat(amount);
+      const totalAmt=parseFloat((unitPrice*qty).toFixed(2));
+      const pts=Math.round(totalAmt*mult);
+      const txnId=dbGenTxnId(vendorId);
+      dbInsertTransaction(vendorId,{
+        txn_id:txnId, date:new Date().toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}),
+        ts:Date.now(), customer_id, cust_name:`${c.first_name} ${c.last_name}`,
+        points_tier:c.points_tier, order_type:order_type||'registered',
+        product_id:prodId, product_name:prodName,
+        description:description||(prodName||'Purchase')+(qty>1?` (qty:${qty})`:''),
+        unit_price:unitPrice, quantity:qty, amount:totalAmt,
+        multiplier:mult, points:pts, type:'earn', ref_id:null, created_by:'api'
+      });
+      dbUpdateCustomerPoints(vendorId,customer_id,pts,0);
+      return {status:201, body:{data:_txnView(dbGetTransactions(vendorId).find(t=>t.txn_id===txnId)), points_earned:pts}};
+    }
+    /* ── GET /points/:customer_id ── */
+    if(resource==='points' && method==='GET' && id) {
+      const c=dbGetCustomer(vendorId,id);
+      if(!c) return {status:404, body:{error:'Customer not found.'}};
+      const cfg=dbGetConfig(vendorId);
+      const spend=dbGetQualifyingSpend(vendorId,id,cfg.reset_policy||'calendar');
+      const tiers=dbGetTiers(vendorId); let tier=tiers[0];
+      if(c.status_override) tier=tiers.find(t=>t.id===c.status_override)||tier;
+      else for(const t of tiers){if(spend>=t.min_spend) tier=t;}
+      return {status:200, body:{
+        customer_id:id,
+        points_earned:c.points_earned,
+        points_deducted:c.points_deducted,
+        net_points:c.points_earned-c.points_deducted,
+        qualifying_spend:spend,
+        status:tier?.name||'Basic'
+      }};
+    }
+    return {status:404, body:{error:`Unknown endpoint: ${method} /${resource}`}};
+  } catch(e) {
+    return {status:500, body:{error:e.message||'Internal error'}};
+  }
+}
+
+function _customerView(vendorId, c) {
+  const cfg=dbGetConfig(vendorId);
+  const spend=dbGetQualifyingSpend(vendorId,c.customer_id,cfg.reset_policy||'calendar');
+  const tiers=dbGetTiers(vendorId);
+  const highest=tiers[tiers.length-1], lowest=tiers[0];
+  let tier=lowest, statusReason='spend';
+  if(c.points_tier==='special'){
+    tier=highest; statusReason='special';
+  } else if(c.status_override){
+    tier=tiers.find(t=>t.id===c.status_override)||lowest; statusReason='manual';
+  } else if(spend<=0){
+    tier=lowest; statusReason='expired';
+  } else {
+    for(const t of tiers){if(spend>=t.min_spend) tier=t;}
+  }
+  return {
+    customer_id:c.customer_id, first_name:c.first_name, last_name:c.last_name,
+    email:c.email, phone:c.phone, points_tier:c.points_tier,
+    points_earned:c.points_earned, points_deducted:c.points_deducted,
+    net_points:c.points_earned-c.points_deducted,
+    qualifying_spend:spend, status:tier?.name||'Basic',
+    status_reason:statusReason,
+    status_overridden:c.points_tier==='special'||!!c.status_override,
+    registered_at:c.registered_at
+  };
+}
+function _txnView(t) {
+  return {
+    txn_id:t.txn_id, date:t.date, customer_id:t.customer_id,
+    customer_name:t.cust_name, product_id:t.product_id, product_name:t.product_name,
+    description:t.description, unit_price:t.unit_price||t.amount,
+    quantity:t.quantity||1, amount:t.amount, multiplier:t.multiplier,
+    points:t.points, type:t.type, order_type:t.order_type,
+    qty_returned:t.qty_returned||0, returned:!!t.returned, ref_id:t.ref_id,
+    created_by:t.created_by, ts:t.ts
+  };
 }
