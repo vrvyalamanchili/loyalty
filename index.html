@@ -118,7 +118,10 @@
     <div id="tab-customers" class="panel">
       <div class="page-header-row">
         <div><h1>Customers</h1><p class="page-sub">Registered loyalty members</p></div>
-        <button class="btn-primary" onclick="if(canWrite())openModal('add-customer');else alert('Readonly access — cannot add customers.')">+ Register customer</button>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div class="search-bar"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="cust-search" type="text" placeholder="Search by name, email, ID…" oninput="renderCustomers()"/></div>
+          <button class="btn-primary" onclick="if(canWrite())openModal('add-customer');else alert('Readonly access.')">+ Register customer</button>
+        </div>
       </div>
       <div class="table-wrap">
         <div class="empty-state" id="cust-empty"><svg width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg><p>No customers yet.</p></div>
@@ -133,7 +136,10 @@
     <div id="tab-products" class="panel">
       <div class="page-header-row">
         <div><h1>Product catalog</h1><p class="page-sub">Per-product points multiplier overrides</p></div>
-        <button class="btn-primary" onclick="openProductModal()">+ Add product</button>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div class="search-bar"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="prod-search" type="text" placeholder="Search by name, SKU, category…" oninput="renderProducts()"/></div>
+          <button class="btn-primary" onclick="openProductModal()">+ Add product</button>
+        </div>
       </div>
       <div class="table-wrap">
         <div class="empty-state" id="prod-empty"><svg width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/></svg><p>No products yet.</p></div>
@@ -172,7 +178,10 @@
     <div id="tab-ledger" class="panel">
       <div class="page-header-row">
         <div><h1>Ledger</h1><p class="page-sub">Full transaction audit trail</p></div>
-        <select id="ledger-filter" onchange="renderLedger()" style="font-size:13px;padding:7px 12px;border-radius:8px;border:1px solid #e2e8f0;background:#fff"><option value="">All customers</option></select>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div class="search-bar"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="ledger-search" type="text" placeholder="Search by ID, customer, product…" oninput="renderLedger()"/></div>
+          <select id="ledger-filter" onchange="renderLedger()" style="font-size:13px;padding:7px 12px;border-radius:8px;border:1px solid #e2e8f0;background:#fff"><option value="">All customers</option></select>
+        </div>
       </div>
       <div id="ledger-summary-bar" class="summary-bar" style="display:none"></div>
       <div class="table-wrap">
