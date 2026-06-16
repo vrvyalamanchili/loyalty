@@ -269,7 +269,14 @@ function addCustomer() {
 }
 
 function renderCustomers() {
-  const customers=dbGetCustomers(vid());
+  let customers = dbGetCustomers(vid());
+  const q = (document.getElementById('cust-search')?.value || '').toLowerCase().trim();
+  if (q) customers = customers.filter(c =>
+    c.customer_id.toLowerCase().includes(q) ||
+    `${c.first_name} ${c.last_name}`.toLowerCase().includes(q) ||
+    (c.email||'').toLowerCase().includes(q) ||
+    c.points_tier.toLowerCase().includes(q)
+  );
   const empty=document.getElementById('cust-empty'), table=document.getElementById('cust-table');
   if(!customers.length){empty.style.display='flex';table.style.display='none';return;}
   empty.style.display='none'; table.style.display='table';
@@ -536,8 +543,17 @@ function populateLedgerFilter() {
   if(prev) sel.value=prev;
 }
 function renderLedger() {
-  const filter=document.getElementById('ledger-filter').value;
-  const txns=dbGetTransactions(vid(),filter||null);
+  const filter = document.getElementById('ledger-filter').value;
+  let txns = dbGetTransactions(vid(), filter || null);
+  const q = (document.getElementById('ledger-search')?.value || '').toLowerCase().trim();
+  if (q) txns = txns.filter(t =>
+    t.txn_id.toLowerCase().includes(q) ||
+    (t.cust_name||'').toLowerCase().includes(q) ||
+    (t.customer_id||'').toLowerCase().includes(q) ||
+    (t.product_name||'').toLowerCase().includes(q) ||
+    (t.description||'').toLowerCase().includes(q) ||
+    (t.type||'').toLowerCase().includes(q)
+  );
   const empty=document.getElementById('ledger-empty'), table=document.getElementById('ledger-table'), sumBar=document.getElementById('ledger-summary-bar');
   if(!txns.length){empty.style.display='flex';table.style.display='none';sumBar.style.display='none';return;}
   empty.style.display='none'; table.style.display='table'; sumBar.style.display='flex';
@@ -611,7 +627,14 @@ function closeDrawer() { document.getElementById('customer-drawer').classList.re
 
 /* ══════════════════════════════════════════ PRODUCTS ══════════════════════════════════════════ */
 function renderProducts() {
-  const products=dbGetProducts(vid());
+  let products = dbGetProducts(vid());
+  const q = (document.getElementById('prod-search')?.value || '').toLowerCase().trim();
+  if (q) products = products.filter(p =>
+    p.product_id.toLowerCase().includes(q) ||
+    p.name.toLowerCase().includes(q) ||
+    (p.sku||'').toLowerCase().includes(q) ||
+    (p.category||'').toLowerCase().includes(q)
+  );
   const empty=document.getElementById('prod-empty'), table=document.getElementById('prod-table');
   if(!products.length){empty.style.display='flex';table.style.display='none';return;}
   empty.style.display='none'; table.style.display='table';

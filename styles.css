@@ -737,3 +737,23 @@ input:focus, select:focus { border-color: #a5b4fc; box-shadow: 0 0 0 3px #eef2ff
   margin-left: auto; flex-shrink: 0;
 }
 .mobile-logout-btn:hover { background: #334155; color: #ef4444; }
+
+/* ─── search bar ─── */
+.search-bar {
+  display: flex; align-items: center; gap: 8px;
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+  padding: 7px 12px; min-width: 240px;
+  transition: border-color 0.15s;
+}
+.search-bar:focus-within { border-color: #a5b4fc; box-shadow: 0 0 0 3px #eef2ff; }
+.search-bar svg { flex-shrink: 0; color: #94a3b8; }
+.search-bar input {
+  border: none; outline: none; background: none;
+  font-size: 13px; color: #1e293b; width: 100%;
+  padding: 0;
+}
+.search-bar input::placeholder { color: #94a3b8; }
+
+@media (max-width: 640px) {
+  .search-bar { min-width: 0; flex: 1; }
+}
